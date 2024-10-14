@@ -2,8 +2,8 @@ name: Keep Codespaces Running
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Run every 5 minutes
-  workflow_dispatch:  # Allow manual trigger
+    - cron: '*/5 * * * *'  # Runs every 5 minutes
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   maintain_codespaces:
@@ -15,24 +15,35 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh jq
 
-      - name: Authenticate GitHub CLI with PAT Token
+      - name: Authenticate GitHub CLI with Personal Access Token
         env:
-          GITHUB_TOKEN: ${{ secrets.PERSONAL_CLASSIC_TOKEN }}
-        run: |
-          gh auth login --with-token <<< "$GITHUB_TOKEN"
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # Reference your secret
+        run: echo "$PERSONAL_ACCESS_TOKEN" | gh auth login --with-token
 
       - name: Check and Restart All Codespaces
         run: |
+          # Get the list of all Codespaces and their states
           CODESPACES=$(gh codespace list --json name,state | jq -c '.[]')
+
+          # Iterate through each Codespace
           echo "$CODESPACES" | while IFS= read -r codespace; do
             NAME=$(echo "$codespace" | jq -r '.name')
             STATUS=$(echo "$codespace" | jq -r '.state')
+
             echo "Codespace: $NAME, Status: $STATUS"
+
             if [ "$STATUS" == "Shutdown" ]; then
-              echo "Starting $NAME..."
+              echo "Codespace $NAME is offline. Starting it..."
               gh codespace ssh -c "$NAME" --exit-on-disconnect &
+              sleep 10  # Wait for the Codespace to be ready
+              echo "Running the Python script..."
+              gh codespace ssh -c "$NAME" -- "cd /workspaces/sharp && python3 sharp.py" &
             else
-              echo "$NAME is already running."
+              echo "Codespace $NAME is already running."
+              echo "Running the Python script..."
+              gh codespace ssh -c "$NAME" -- "cd /workspaces/sharp && python3 sharp.py" &
             fi
           done
+
+          # Wait for all background processes to complete
           wait

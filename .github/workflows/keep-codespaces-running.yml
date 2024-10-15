@@ -2,7 +2,7 @@ name: Keep Codespaces Running
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # Runs every 5 minutes
+    - cron: '0 * * * *'  # Runs every hour
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
@@ -17,33 +17,29 @@ jobs:
 
       - name: Authenticate GitHub CLI with Personal Access Token
         env:
-          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # Reference your secret
+          PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: echo "$PERSONAL_ACCESS_TOKEN" | gh auth login --with-token
 
-      - name: Check and Restart All Codespaces
+      - name: Restart and Run Python Script
         run: |
-          # Get the list of all Codespaces and their states
+          # Get all Codespaces and their state
           CODESPACES=$(gh codespace list --json name,state | jq -c '.[]')
 
-          # Iterate through each Codespace
+          # Iterate over Codespaces and restart them
           echo "$CODESPACES" | while IFS= read -r codespace; do
             NAME=$(echo "$codespace" | jq -r '.name')
-            STATUS=$(echo "$codespace" | jq -r '.state')
 
-            echo "Codespace: $NAME, Status: $STATUS"
+            echo "Stopping and restarting Codespace: $NAME..."
+            gh codespace stop -c "$NAME"  # Stop Codespace
+            sleep 15  # Wait before restarting
 
-            if [ "$STATUS" == "Shutdown" ]; then
-              echo "Codespace $NAME is offline. Starting it..."
-              gh codespace ssh -c "$NAME" --exit-on-disconnect &
-              sleep 10  # Wait for the Codespace to be ready
-              echo "Running the Python script..."
-              gh codespace ssh -c "$NAME" -- "cd /workspaces/sharp && python3 sharp.py" &
-            else
-              echo "Codespace $NAME is already running."
-              echo "Running the Python script..."
-              gh codespace ssh -c "$NAME" -- "cd /workspaces/sharp && python3 sharp.py" &
-            fi
+            echo "Starting Codespace: $NAME..."
+            gh codespace ssh -c "$NAME" --exit-on-disconnect &
+            sleep 15  # Wait for startup
+
+            echo "Running the Python bot..."
+            gh codespace ssh -c "$NAME" -- "cd /workspaces/sharp && python3 sharp.py" &
           done
 
-          # Wait for all background processes to complete
+          # Wait for all background tasks to finish
           wait
